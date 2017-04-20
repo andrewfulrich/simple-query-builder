@@ -1,0 +1,23 @@
+{
+  "name": "simple-query-builder",
+  "version": "1.0.0",
+  "description": "Some functions for building parameterized queries",
+  "main": "simpleQueryBuilder.js",
+  "scripts": {
+    "test": "tape tests/*.js | tap-spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrewfulrich/simple-query-builder.git"
+  },
+  "author": "Andrew Ulrich",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/andrewfulrich/simple-query-builder/issues"
+  },
+  "homepage": "https://github.com/andrewfulrich/simple-query-builder#readme",
+  "devDependencies": {
+    "tap-spec": "^4.1.1",
+    "tape": "^4.6.3"
+  }
+}
