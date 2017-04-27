@@ -1,6 +1,6 @@
 {
   "name": "simple-query-builder",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Some functions for building parameterized queries",
   "main": "simpleQueryBuilder.js",
   "scripts": {
