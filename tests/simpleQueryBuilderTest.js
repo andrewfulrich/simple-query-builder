@@ -1,9 +1,9 @@
 const tape=require('tape')
 const simpleQueryBuilder=require('../simpleQueryBuilder')
 
-tape('make a full find query',t=>{
+tape('make a find query ordered by foo',t=>{
   t.plan(2)
-  const expectedQuery="SELECT foo, bar FROM theTable WHERE fee=$1 AND fo=$2 ORDER BY $3 DESC LIMIT $4 OFFSET $5"
+  const expectedQuery="SELECT foo, bar FROM theTable WHERE fee=$1 AND fo=$2 ORDER BY foo ASC LIMIT $3 OFFSET $4"
   const resultingQuery=simpleQueryBuilder.find('theTable',{
     fee:'fi',
     fo:'fum',
@@ -13,26 +13,56 @@ tape('make a full find query',t=>{
     isAscOrder:false
   },['foo','bar'])
   t.equal(resultingQuery.text,expectedQuery,'the find queries should match')
-  t.deepEqual(resultingQuery.values,['fi','fum','foo',10,20],'the values to apply should match')
+  t.deepEqual(resultingQuery.values,['fi','fum',10,20],'the values to apply should match')
+})
+
+tape('make a find query ordered by foo descending',t=>{
+  t.plan(2)
+  const expectedQuery="SELECT foo, bar FROM theTable WHERE fee=$1 AND fo=$2 ORDER BY foo DESC LIMIT $3 OFFSET $4"
+  const resultingQuery=simpleQueryBuilder.find('theTable',{
+    fee:'fi',
+    fo:'fum',
+    orderBy:'foo.DESC',
+    limit:10,
+    offset:20,
+    isAscOrder:false
+  },['foo','bar'])
+  t.equal(resultingQuery.text,expectedQuery,'the find queries should match')
+  t.deepEqual(resultingQuery.values,['fi','fum',10,20],'the values to apply should match')
+})
+
+tape('make a find query ordered by foo descending',t=>{
+  t.plan(2)
+  const expectedQuery="SELECT foo, bar FROM theTable WHERE fee=$1 AND fo=$2 ORDER BY foo DESC, bar ASC LIMIT $3 OFFSET $4"
+  const resultingQuery=simpleQueryBuilder.find('theTable',{
+    fee:'fi',
+    fo:'fum',
+    orderBy:['foo.DESC','bar'],
+    limit:10,
+    offset:20,
+    isAscOrder:false
+  },['foo','bar'])
+  t.equal(resultingQuery.text,expectedQuery,'the find queries should match')
+  t.deepEqual(resultingQuery.values,['fi','fum',10,20],'the values to apply should match')
 })
 
 tape('make a minimal find query',t=>{
   t.plan(2)
-  const expectedQuery="SELECT foo, bar FROM theTable WHERE fee=$1 AND fo=$2"
+  const expectedQuery="SELECT foo, bar FROM theTable WHERE fee=$1 AND fo=$2 LIMIT $3 OFFSET $4"
   const resultingQuery=simpleQueryBuilder.find('theTable',{
     fee:'fi',
     fo:'fum',
   },['foo','bar'])
   t.equal(resultingQuery.text,expectedQuery,'the find queries should match')
-  t.deepEqual(resultingQuery.values,['fi','fum'],'the values to apply should match')
+  t.deepEqual(resultingQuery.values,['fi','fum',10,0],'the values to apply should match')
 })
 
 tape('make a find query with no WHERE',t=>{
   t.plan(2)
-  const expectedQuery="SELECT foo, bar FROM theTable"
+  const expectedQuery="SELECT foo, bar FROM theTable LIMIT $1 OFFSET $2"
   const resultingQuery=simpleQueryBuilder.find('theTable',{},['foo','bar'])
   t.equal(resultingQuery.text,expectedQuery,'the find queries should match')
-  t.deepEqual(resultingQuery.values,[],'the values to apply should match')
+  t.deepEqual(resultingQuery.values,[10,0],'the values to apply should match')
 })
 
 tape('make an update query',t=>{

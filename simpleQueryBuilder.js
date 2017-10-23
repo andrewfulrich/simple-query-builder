@@ -31,13 +31,13 @@
 /**
  * makes the WHERE clauses in your query
  * @param columnNames
- * @param columnValueMap
+ * @param params
  * @returns {*}
  */
-function makeClauses(columnNames,columnValueMap) {
+function makeClauses(columnNames,params) {
   return columnNames.reduce((accumulator,currentValue,currentIndex)=>{
     accumulator.clauses.push(currentValue+'=$'+(currentIndex+1))
-    accumulator.values.push(columnValueMap[currentValue])
+    accumulator.values.push(params[currentValue])
     return accumulator
   },{
     clauses:[],
@@ -47,14 +47,14 @@ function makeClauses(columnNames,columnValueMap) {
 
 /**
  * makes the LIKE clauses in your query
- * @param columnValueMap
+ * @param params
  * @param index
  * @returns {*}
  */
-function makeLikeClauses(columnValueMap,index) {
-  return Object.keys(columnValueMap).reduce((accumulator,currentValue,currentIndex)=>{
+function makeLikeClauses(params,index) {
+  return Object.keys(params).reduce((accumulator,currentValue,currentIndex)=>{
     accumulator.clauses.push(currentValue+' like $'+(currentIndex+1+index))
-    accumulator.values.push('%'+columnValueMap[currentValue]+'%')
+    accumulator.values.push('%'+params[currentValue]+'%')
     return accumulator
   },{
     clauses:[],
@@ -63,43 +63,85 @@ function makeLikeClauses(columnValueMap,index) {
 }
 
 /**
+ * sanitize the orderBy param to be used by the find function
+ * @param orderBy - is assumed to be an array of "columnName.direction" strings where ".direction" is ".asc", ".desc", or not present
+ * @param columnsToSelect - list of selected columns. You can only order by the columns you select
+ * @returns {*} a mapping of column name to direction (asc/desc)
+ */
+function sanitizeOrderBy(orderBy,columnsToSelect) {
+  let orderByArray=orderBy
+  if(undefOrBlank(orderBy)) {
+    orderByArray=[]
+  } else if(typeof orderBy == 'string') {
+    orderByArray = [orderBy]
+  }
+  if(!Array.isArray(orderByArray)) {
+    throw new Error('orderBy param must be an array of "columnName.direction" strings where ".direction" is ".asc", ".desc", or not present')
+  }
+  return orderByArray
+    .filter(orderString=>columnsToSelect.includes(orderString.split('.')[0]))
+    .map(orderString=>({
+      column:orderString.split('.')[0],
+      direction:orderString.split('.').length > 1 ? orderString.split('.')[1] : 'ASC'
+    }))
+    .filter(orderObj=>orderObj.direction.toLowerCase() == 'asc' || orderObj.direction.toLowerCase() == 'desc')
+    .reduce((accum,orderObj)=>Object.assign(accum,{[orderObj.column]:orderObj.direction}),{})
+}
+
+function sanitizeLimit(limit) {
+  const justDefault= undefOrBlank(limit) || isNaN(parseInt(limit)) || parseInt(limit) === 0
+  return justDefault ?  10 : parseInt(limit)
+}
+
+function undefOrBlank(thing) {
+  return thing==undefined||thing===''
+}
+
+/**
  * make a search parameterized query
  * @param tableName the name of the table
- * @param columnValueMap a map of columns to values
+ * @param params a map of columns to values
  * @param columnsToSelect a list of columns to select
- * @param likeColumnValueMap if you have like queries, this would be the map of the column names to the "like" values
+ * @param likeColumns if you have like queries, this would be a list of which columns should be queried with "like"
  * @returns {{text: string, values}}
  */
-function find(tableName,columnValueMap, columnsToSelect,likeColumnValueMap={}) {
+function find(tableName,params,columnsToSelect,likeColumns=[]) {
+  const likeSearchParams=Object.keys(params)
+    .filter(param=>likeColumns.includes(param))
+    .reduce((accum,curr)=>Object.assign(accum,{[curr]:params[curr]}),{})
+
+  const equalSearchParams=Object.keys(params)
+    .filter(param=>!likeColumns.includes(param))
+    .filter(param=>!['limit','offset','orderBy','isAscOrder'].includes(param))
+    .reduce((accum,curr)=>Object.assign(accum,{[curr]:params[curr]}),{})
+
+  const limit=sanitizeLimit(params.limit)
+  const offset=undefOrBlank(params.offset) || isNaN(parseInt(params.limit)) ? 0 : parseInt(params.offset)
+
   var queryText='SELECT '+columnsToSelect.join(', ')+' FROM '+tableName
-  var whereColumns=Object.keys(columnValueMap).filter((key)=>{
-    return ['limit','offset','orderBy','isAscOrder'].indexOf(key) == -1
-  })
-  if(whereColumns.length>0 || Object.keys(likeColumnValueMap).length>0) {
+
+  if(Object.keys(equalSearchParams).length>0 || Object.keys(likeSearchParams).length>0) {
     queryText+=' WHERE '
   }
-  var whereClauses=makeClauses(whereColumns,columnValueMap)
-  var whereLikeClauses=makeLikeClauses(likeColumnValueMap,whereClauses.clauses.length)
+  var whereClauses=makeClauses(Object.keys(equalSearchParams),equalSearchParams)
+  var whereLikeClauses=makeLikeClauses(likeSearchParams,whereClauses.clauses.length)
 
   queryText+=whereClauses.clauses.join(' AND ')
   queryText+=whereLikeClauses.clauses.length > 0 && whereClauses.clauses.length > 0 ? ' AND ':''
   queryText+=whereLikeClauses.clauses.join(' AND ')
+
+  const orderBy=sanitizeOrderBy(params.orderBy,columnsToSelect)
+  if(Object.keys(orderBy).length > 0) {
+    queryText += ' ORDER BY '
+    queryText += Object.keys(orderBy)
+      .map(orderCol=>`${orderCol} ${orderBy[orderCol]}`)
+      .join(', ')
+  }
   var applyVals=whereClauses.values.concat(whereLikeClauses.values)
-  if(columnValueMap.orderBy != undefined && columnValueMap.orderBy != '') {
-    applyVals.push(columnValueMap.orderBy)
-    queryText += ' ORDER BY $'+(applyVals.length)
-    if(columnValueMap.isAscOrder != undefined) {
-      queryText += (columnValueMap.isAscOrder ? ' ASC' : ' DESC')
-    }
-  }
-  if(columnValueMap.limit != undefined && columnValueMap.limit != 0) {
-    applyVals.push(columnValueMap.limit)
-    queryText += ' LIMIT $'+(applyVals.length)
-    if(columnValueMap.offset != undefined) {
-      applyVals.push(columnValueMap.offset)
-      queryText += ' OFFSET $'+(applyVals.length)
-    }
-  }
+  applyVals.push(limit)
+  queryText += ' LIMIT $'+(applyVals.length)
+  applyVals.push(offset)
+  queryText += ' OFFSET $'+(applyVals.length)
   return {
     text:queryText,
     values:applyVals
@@ -110,15 +152,15 @@ function find(tableName,columnValueMap, columnsToSelect,likeColumnValueMap={}) {
  * make an update parameterized query
  * @param tableName
  * @param tableName the name of the table
- * @param columnValueMap a map of columns to values
+ * @param params a map of columns to values
  * @param primaryKeyName the name of the primary key column
  * @param primaryKeyVal the value of the primary key of the thing you want to update
  * @returns {{text: string, values: (Array|*|Array.<T>)}}
  */
-function update(tableName,columnValueMap,primaryKeyName,primaryKeyVal) {
+function update(tableName,params,primaryKeyName,primaryKeyVal) {
   var queryText='UPDATE '+tableName+' SET '
-  const toUpdate=Object.keys(columnValueMap).filter((c)=>c!=primaryKeyName)
-  var setClauses=makeClauses(toUpdate,columnValueMap)
+  const toUpdate=Object.keys(params).filter((c)=>c!=primaryKeyName)
+  var setClauses=makeClauses(toUpdate,params)
   queryText += setClauses.clauses.join(', ')
   setClauses.values.push(primaryKeyVal)
   queryText += ' WHERE '+primaryKeyName+'=$'+(setClauses.values.length)
@@ -146,16 +188,16 @@ function del(tableName,primaryKeyName,primaryKeyVal) { //delete is a reserved wo
  * make an insert parameterized query
  * @param tableName the name of the table
  * @param primaryKeyName the name of the primary key column
- * @param columnValueMap a map of columns to values
+ * @param params a map of columns to values
  * @returns {{text: string, values: Array}}
  */
-function insert(tableName,primaryKeyName,columnValueMap) {
+function insert(tableName,primaryKeyName,params) {
   var queryText='INSERT INTO '+tableName
-  var keys=Object.keys(columnValueMap)
+  var keys=Object.keys(params)
   queryText+=' ('+keys.join(', ')+') VALUES'
   var insertVals=keys.reduce((accumulator,currentValue,currentIndex)=>{
     accumulator.clauses.push('$'+(currentIndex+1))
-    accumulator.values.push(columnValueMap[currentValue])
+    accumulator.values.push(params[currentValue])
     return accumulator
   },{
     clauses:[],
